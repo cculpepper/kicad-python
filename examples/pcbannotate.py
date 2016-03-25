@@ -28,25 +28,34 @@
 # 02110-1301, USA.
 #
 
-from kicad.pcbnew.board import Board
-from kicad.pcbnew.layer import Layer
+import pcbnew
 import re
 import glob
 import os
 import codecs
+import sys
 
-b = Board.from_editor()
+if len(sys.argv) != 2:
+    print("Usage ", __file__, "<board.pcbnew")
+    sys.exit(1)
 
-mods = list(b.modules)
+input_path = sys.argv[1]
+
+#b = Board.from_editor()
+b = pcbnew.LoadBoard(input_path)
+
+mods = list(b.GetModules())
 
 def sortkeys(mod):
-    if mod.layer == Layer.Front:
-        return (mod.layer, mod.y, mod.x)
-    else: # Layer.Back
-        # Components in the back are sorted from right to
-        # left according to their canvas position. When you flip the
-        # board at your hand, they will be sorted 'left to right'.
-        return (mod.layer, mod.y, -mod.x)
+    return (mod.GetLayer(), mod.GetPosition()[0], mod.GetPosition()[1])
+    return (mod.layer, mod.y, mod.x)
+    #if mod.layer == Layer.Front:
+        #return (mod.layer, mod.y, mod.x)
+    #else: # Layer.Back
+        ## Components in the back are sorted from right to
+        ## left according to their canvas position. When you flip the
+        ## board at your hand, they will be sorted 'left to right'.
+        #return (mod.layer, mod.y, -mod.x)
 
 mods = sorted(mods, key=sortkeys)
 
@@ -54,7 +63,7 @@ ref_counter = {} # dictionary of reference names
 changes = [] # a list of tuples
 
 for mod in mods:
-    prev_ref = mod.reference
+    prev_ref = mod.GetReference()
     m = re.match('^((?:[a-zA-Z_\d]+[a-zA-Z_])|(?:[a-zA-Z_]+))(\d+)$', prev_ref)
 
     if m:
@@ -67,19 +76,19 @@ for mod in mods:
         next_ref = name + str(ref_counter[name]+1)
         ref_counter[name] += 1
     else:
-        next_ref = name + str(1)
-        ref_counter[name] = 1
+        next_ref = name + str(101)
+        ref_counter[name] = 101
 
     if next_ref == prev_ref:
         continue
 
     print('Re-naming %s -> %s' % (prev_ref, next_ref))
 
-    mod.reference = next_ref
+    mod.SetReference(next_ref)
     changes.append((prev_ref, next_ref))
 
 if changes:
-    b.save()
+    b.Save(input_path)
     print("PCB annotated.")
 
     # PCB annotation completed, now back-annotate schematics
@@ -93,7 +102,8 @@ if changes:
     regx = re.compile('|'.join(r'\b%s\b' % k for k in changes.keys()))
 
     # get a list of schematic files by globbing
-    directory = os.path.dirname(b.filename)
+    directory = os.path.dirname(input_path)
+    directory = './' + directory
     sch_files = glob.glob(directory + '/*.sch')
 
     for sch_file in sch_files:
